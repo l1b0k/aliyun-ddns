@@ -1,0 +1,10 @@
+[Unit]
+Description=dns
+
+[Service]
+User=pi
+Type=simple
+ExecStart=/usr/local/bin/dns  -v=2 --logtostderr --ak= --sk= --domain-name= --domain-rr=@,www --upstream-domain=
+
+[Install]
+WantedBy=multi-user.target
