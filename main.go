@@ -2,22 +2,25 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"net"
 	"strings"
 	"time"
+
+	_ "github.com/l1b0k/aliyun-ddns/addr/ipify"
+	"github.com/l1b0k/aliyun-ddns/addr/types"
+	"github.com/l1b0k/aliyun-ddns/version"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/alidns"
 	"github.com/golang/glog"
 )
 
 type MatchSet struct {
+	DomainName string
+
 	RR    string
 	Type  string
-	Value net.IP
-}
-
-func (m *MatchSet) hash() string {
-	return m.RR + m.Type + m.Value.String()
+	Value string
 }
 
 type UpdateSet struct {
@@ -27,59 +30,44 @@ type UpdateSet struct {
 	Value    string
 }
 
-func (u *UpdateSet) hash() string {
-	return u.RR + u.Type + u.Value
-}
-
 // upstream host to sync
-func upstream(host string, domains string) *[]MatchSet {
-	realIPs, err := net.LookupIP(host)
-	if err != nil || len(realIPs) < 1 {
-		glog.Warningf("unable to found addr for %s", host)
+func upstream(provider types.Interface, domains string) []MatchSet {
+	realIPs, err := provider.Fetch()
+	if err != nil {
+		glog.Warningf("get addr failed %s", err.Error())
 		return nil
 	}
-
-	var recordTypes []string
-	// can only handle one IP for each family
-	var realV4IP, realV6IP net.IP
-	for _, ip := range realIPs {
-		glog.V(2).Infof("lookup %s %s", host, ip.String())
-		if ip.To4() == nil {
-			// v6
-			realV6IP = ip
-			recordTypes = append(recordTypes, "AAAA")
-		} else {
-			realV4IP = ip
-			recordTypes = append(recordTypes, "A")
-		}
+	if realIPs.IPv4 == nil && realIPs.IPv6 == nil {
+		glog.Warningf("unable to found addr for %s")
+		return nil
 	}
 
 	// build matchset
 	var matchSet []MatchSet
 	rrs := strings.Split(domains, ",")
-	for _, recordType := range recordTypes {
-		var ip net.IP
-		switch recordType {
-		case "A":
-			ip = realV4IP
-		case "AAAA":
-			ip = realV6IP
-		default:
-			continue
-		}
-
-		for _, rr := range rrs {
+	for _, rr := range rrs {
+		if realIPs.IPv6 != nil {
 			matchSet = append(matchSet, MatchSet{
 				RR:    rr,
-				Type:  recordType,
-				Value: ip,
+				Type:  "AAAA",
+				Value: realIPs.IPv6.String(),
 			})
 		}
+		if realIPs.IPv4 != nil {
+			for _, rr := range rrs {
+				matchSet = append(matchSet, MatchSet{
+					RR:    rr,
+					Type:  "A",
+					Value: realIPs.IPv4.String(),
+				})
+			}
+		}
 	}
-	return &matchSet
+
+	return matchSet
 }
 
-func sync(client *alidns.Client, domainName string, matchSet *[]MatchSet) {
+func sync(client *alidns.Client, domainName string, matchSet []MatchSet) {
 	request := alidns.CreateDescribeDomainRecordsRequest()
 	request.Scheme = "https"
 	request.AcceptFormat = "json"
@@ -95,47 +83,37 @@ func sync(client *alidns.Client, domainName string, matchSet *[]MatchSet) {
 	// updateSet is what we will do update
 	// createSet is (matchSet - updateSet) that is we will add
 
-	// 1) copy all
-	createSet := make(map[string]UpdateSet, 2)
-	for _, wantedRecord := range *matchSet {
-		createSet[wantedRecord.hash()] = UpdateSet{
-			RR:    wantedRecord.RR,
-			Type:  wantedRecord.Type,
-			Value: wantedRecord.Value.String(),
-		}
+	// 1) add all to createSet
+	createSet := make(map[MatchSet]struct{}, 2)
+	for _, wantedRecord := range matchSet {
+		createSet[wantedRecord] = struct{}{}
 	}
 
-	// so this only check for update not add
 	var updateSet []UpdateSet
-	// match set A value RR
-	for _, existedRecord := range response.DomainRecords.Record {
-		for _, wantedRecord := range *matchSet {
-			if existedRecord.Type != wantedRecord.Type {
+	for _, existed := range response.DomainRecords.Record {
+		for _, wanted := range matchSet {
+			if existed.Type != wanted.Type {
 				continue
 			}
-			if existedRecord.RR != wantedRecord.RR {
+			if existed.RR != wanted.RR {
 				continue
 			}
-			existedIP := net.ParseIP(existedRecord.Value)
-			if existedIP == nil {
+			// check semantics
+			existedIP := net.ParseIP(existed.Value)
+			if existedIP != nil && existedIP.Equal(net.ParseIP(wanted.Value)) {
+				delete(createSet, wanted)
 				continue
 			}
 
-			// found and existedRecord not changed
-			if existedIP.Equal(wantedRecord.Value) {
-				// remove from createSet
-				delete(createSet, wantedRecord.hash())
-				continue
-			}
 			toUpdate := UpdateSet{
-				RecordId: existedRecord.RecordId,
-				RR:       existedRecord.RR,
-				Type:     existedRecord.Type,
-				Value:    wantedRecord.Value.String(),
+				RecordId: existed.RecordId,
+				RR:       existed.RR,
+				Type:     existed.Type,
+				Value:    wanted.Value,
 			}
 			updateSet = append(updateSet, toUpdate)
 			// remove from createSet
-			delete(createSet, toUpdate.hash())
+			delete(createSet, wanted)
 		}
 	}
 
@@ -148,27 +126,34 @@ func sync(client *alidns.Client, domainName string, matchSet *[]MatchSet) {
 		updateRequest.RR = up.RR
 		updateRequest.Value = up.Value
 
-		_, err := client.UpdateDomainRecord(updateRequest)
+		updateResp, err := client.UpdateDomainRecord(updateRequest)
 		if err != nil {
 			glog.Errorf("can not update record for aliyun dns, %s", err.Error())
 			return
 		}
+		glog.Infof("update resolve record (%s %s %s) %s\n", domainName, up.RR, up.Value, updateResp.String())
 	}
 
-	for _, add := range createSet {
+	for add := range createSet {
 		addRequest := alidns.CreateAddDomainRecordRequest()
 		addRequest.Scheme = "https"
 		addRequest.AcceptFormat = "json"
 		addRequest.Type = add.Type
 		addRequest.RR = add.RR
 		addRequest.Value = add.Value
+		addRequest.DomainName = domainName
 
-		_, err := client.AddDomainRecord(addRequest)
+		createResp, err := client.AddDomainRecord(addRequest)
 		if err != nil {
 			glog.Errorf("can not add record for aliyun dns, %s", err.Error())
 			return
 		}
+		glog.Infof("create resolve record (%s %s %s) %s\n", domainName, add.RR, add.Value, createResp.String())
 	}
+}
+
+func init() {
+	flag.Set("logtostderr", "true")
 }
 
 func main() {
@@ -177,18 +162,27 @@ func main() {
 	regionID := flag.String("region-id", "cn-hangzhou", "aliyun regionId default cn-hangzhou.")
 	domainName := flag.String("domain-name", "", "domain registered in aliyun.")
 	domainRR := flag.String("domain-rr", "", "comma separated list eg. @,www .")
-	upstreamDomain := flag.String("upstream-domain", "", "upstream domain to sync.")
+	provider := flag.String("provider", "ipify", "provider to get public IP. eg. ipify")
+	versionFlag := flag.Bool("version", false, "print version")
 
 	flag.Parse()
 
+	glog.Infof("version %s %s", version.Version, version.BuildTime)
+	if *versionFlag {
+		return
+	}
 	client, err := alidns.NewClientWithAccessKey(*regionID, *ak, *sk)
 	if err != nil {
 		glog.Fatal(err)
 	}
 
+	p, ok := types.Plugins[*provider]
+	if !ok {
+		glog.Fatal(fmt.Sprintf("can not found provider %s", *provider))
+	}
 	// sync immediately
 	func() {
-		matchSet := upstream(*upstreamDomain, *domainRR)
+		matchSet := upstream(p(), *domainRR)
 		if matchSet != nil {
 			sync(client, *domainName, matchSet)
 		}
@@ -201,7 +195,7 @@ func main() {
 	for {
 		select {
 		case <-t.C:
-			matchSet := upstream(*upstreamDomain, *domainRR)
+			matchSet := upstream(p(), *domainRR)
 			if matchSet != nil {
 				sync(client, *domainName, matchSet)
 			}

@@ -30,7 +30,7 @@ Description=dns
 [Service]
 User=pi
 Type=simple
-ExecStart=/usr/local/bin/dns  -v=2 --logtostderr --ak= --sk= -domain-name= --domain-rr=@,www --upstream-domain=
+ExecStart=/usr/local/bin/dns  -v=2 --logtostderr --ak= --sk= -domain-name= --domain-rr=@,www --upstream-domain= --provider=
 
 [Install]
 WantedBy=multi-user.target
