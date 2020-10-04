@@ -1,10 +1,13 @@
 [Unit]
 Description=dns
+Documentation=https://github.com/l1b0k/aliyun-ddns
+After=network.target
 
 [Service]
 User=pi
 Type=simple
-ExecStart=/usr/local/bin/dns  -v=2 --ak= --sk= --domain-name= --domain-rr=@,www --upstream-domain=
+ExecStart=/usr/local/bin/dns  -v=2 --ak= --sk= --domain-name= --domain-rr=@,www --provider=
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target

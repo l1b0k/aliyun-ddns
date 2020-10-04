@@ -23,20 +23,8 @@ run with systemd
 
 Raspberry Pi demo
 ```bash
-tee /usr/lib/systemd/system/dns.service<<EOF
-[Unit]
-Description=dns
-
-[Service]
-User=pi
-Type=simple
-ExecStart=/usr/local/bin/dns  -v=2 --logtostderr --ak= --sk= -domain-name= --domain-rr=@,www --upstream-domain= --provider=
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable dns
-systemctl start dns
+sudo cp dns.system /usr/lib/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable dns
+sudo systemctl start dns
 ```

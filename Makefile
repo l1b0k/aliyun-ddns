@@ -1,6 +1,6 @@
 NAME=ddns
 BINDIR=bin
-VERSION=$(shell git describe --tags || echo "unknown version")
+VERSION=$(shell git describe --tags || echo "unknown")
 BUILDTIME=$(shell date -u)
 GOBUILD=CGO_ENABLED=0 go build -trimpath -ldflags '-X "github.com/l1b0k/aliyun-ddns/version.Version=$(VERSION)" \
 		-X "github.com/l1b0k/aliyun-ddns/version.BuildTime=$(BUILDTIME)" \
