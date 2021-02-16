@@ -19,7 +19,13 @@ CGO_ENABLE=0 GOARCH=arm GOOS=linux go build -o dns main.go
 ```
 ## Usage
 
-run with systemd
+### run with docker
+
+```bash
+docker run --name ddns -d --restart=always l1b0k/aliyun-ddns --ak= --sk= --domain-name= --domain-rr=@,www
+```
+
+### run with systemd
 
 Raspberry Pi demo
 ```bash

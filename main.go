@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/l1b0k/aliyun-ddns/addr/ipify"
+	_ "github.com/l1b0k/aliyun-ddns/addr/myip"
 	"github.com/l1b0k/aliyun-ddns/addr/types"
 	"github.com/l1b0k/aliyun-ddns/version"
 

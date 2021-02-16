@@ -1,6 +1,6 @@
-package ipify
+package myip
 
-// https://api.ipify.org?format=json
+// https://api.myip.com/
 
 import (
 	"fmt"
@@ -9,14 +9,14 @@ import (
 	"github.com/l1b0k/aliyun-ddns/addr/types"
 )
 
-type IPify struct {
+type MyIP struct {
 }
 
-func (i *IPify) Fetch() (*types.Addr, error) {
+func (i *MyIP) Fetch() (*types.Addr, error) {
 	var result Result
 	client := resty.New()
 
-	resp, err := client.R().SetResult(&result).Get("https://api.ipify.org?format=json")
+	resp, err := client.R().SetResult(&result).Get("https://api.myip.com")
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +31,7 @@ type Result struct {
 }
 
 func init() {
-	types.Plugins["ipify"] = func() types.Interface {
-		return &IPify{}
+	types.Plugins["myip"] = func() types.Interface {
+		return &MyIP{}
 	}
 }
