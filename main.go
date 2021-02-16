@@ -167,10 +167,11 @@ func main() {
 
 	flag.Parse()
 
-	glog.Infof("version %s %s", version.Version, version.BuildTime)
 	if *versionFlag {
+		fmt.Println(version.Print())
 		return
 	}
+	glog.Infof("version %s", version.Print())
 	client, err := alidns.NewClientWithAccessKey(*regionID, *ak, *sk)
 	if err != nil {
 		glog.Fatal(err)
