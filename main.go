@@ -55,13 +55,11 @@ func upstream(provider types.Interface, domains string) []MatchSet {
 			})
 		}
 		if realIPs.IPv4 != nil {
-			for _, rr := range rrs {
-				matchSet = append(matchSet, MatchSet{
-					RR:    rr,
-					Type:  "A",
-					Value: realIPs.IPv4.String(),
-				})
-			}
+			matchSet = append(matchSet, MatchSet{
+				RR:    rr,
+				Type:  "A",
+				Value: realIPs.IPv4.String(),
+			})
 		}
 	}
 
